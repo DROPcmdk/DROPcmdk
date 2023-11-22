@@ -67,6 +67,13 @@ contract ModaRegistry is IModaRegistry, IOfficialModaContracts, AccessControlEnu
         revert CatalogUnregistrationFailed();
     }
 
+<<<<<<< HEAD
+=======
+    function isCatalogRegistered(address catalog) external view returns (bool) {
+        return _catalogs.contains(catalog);
+    }
+
+>>>>>>> fcc5220 (fix: Fix ModaRegistry isCatalogRegistered)
     /// @inheritdoc IModaRegistry
     function isRegisteredCatalog(address catalog) external view returns (bool) {
         return _catalogs.contains(catalog);
