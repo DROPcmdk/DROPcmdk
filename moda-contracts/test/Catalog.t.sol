@@ -7,6 +7,7 @@ import {ModaRegistry} from "../src/ModaRegistry.sol";
 import {Management} from "../src/Management.sol";
 import {Membership} from "../test/mocks/MembershipMock.sol";
 import {ITrackRegistration} from "../src/interfaces/ITrackRegistration.sol";
+import {ISplitsFactory} from "../src/interfaces/ISplitsFactory.sol";
 import "../test/mocks/ReleasesMock.sol";
 
 contract CatalogTest is Test {
@@ -21,7 +22,7 @@ contract CatalogTest is Test {
     string public catalogVersion = "1";
     address public artist = address(0x4);
     address payable public treasuryAddress = payable(address(0x11));
-    address public splitsFactory = address(0x12);
+    ISplitsFactory public splitsFactory = ISplitsFactory(address(0x12));
 
     error InvalidInitialization();
 
