@@ -58,10 +58,12 @@ export const uploadFile = async (file: File, name: string) => {
   formData.append('name', name);
 
   try {
-    const response = await fetch('/api/files', {
+    const response = await fetch('/api/web3Storage', {
       method: 'POST',
       body: formData,
     });
+
+    console.log('web 3 storage response', response);
 
     if (!response.ok) {
       return { ok: false, error: response.statusText };

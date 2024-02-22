@@ -1,5 +1,6 @@
 'use client';
 
+import { useHydratedState } from '@/hooks/useHydratedState';
 import Link from 'next/link';
 import { useAccount } from 'wagmi';
 import { clx } from '../../utils/clx';
@@ -8,6 +9,10 @@ import NavDropdownProfile from './NavDropdownProfile';
 
 export const NavBarProfile = () => {
   const { isConnected } = useAccount();
+  const isHydrated = useHydratedState();
+  if (!isHydrated) {
+    return null;
+  }
   return (
     <nav
       className={clx(
