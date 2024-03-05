@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.21;
 
-import {Script, console2} from "forge-std/Script.sol";
-import "../src/Management.sol";
+import {Script} from "forge-std/Script.sol";
+import {Membership} from "../src/Membership.sol";
 
-contract DeployManagement is Script {
+contract DeployMembership is Script {
     function run() public {
         uint256 privateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         vm.startBroadcast(privateKey);
-        new Management();
+
+        new Membership();
+
         vm.stopBroadcast();
     }
 }

@@ -14,12 +14,71 @@
   [k2]: https://x.com/MODA_DAO
 </div>
 
-
 ## Getting Started
 
+1. Install dependencies
 ```bash
 pnpm i
 ```
+
+2. Set up environment variables
+```bash
+cp ./moda-contracts/.env-local ./moda-contracts/.env
+# Add your values to ./moda-contracts/.env
+```
+## Deploy a Catalog Contract
+
+A Catalog is owned by an organization and is where artists and labels register tracks. Once registered, users can create releases, music NFTs that can be single tracks or a list of tracks.
+
+### Deploy Membership
+
+Membership is a way to control who has access to your Catalog. The default implemenatation defines any address as a "member", which means anyone can register tracks in the Catalog. You can extend this logic to define your own rules such as NFT-gates, minimal ERC-20 balance amounts, or a generic whitelist. See Membership.sol in `./moda-contracts/src/Membership.sol`
+
+1. Deploy contract `pnpm 1_deploy_Membership --chain mumbai`
+
+### Deploy Catalog
+
+1. Deploy contract `pnpm 2_deploy_Registry --chain mumbai --sender <YOUR_OWNER_ADDRESS>`
+
+Then look in the console for your Catalog address:
+
+```
+ $ Your Catalog was deployed to:
+ $ <ADDRESS>
+```
+
+## Deploy Common-Good Contracts (Already Deployed)
+
+These contracts have already been deployed on Mumbai. It is recommended that you use the ones already deployed so that the creators can benefit, but if you need to change certain features you are free to redeploy these. If you would like these contracts on a particular chain please reach out to the team and we will help facilitate. 
+
+### Deploy Registry
+`pnpm c:deploy_Registry --chain mumbai`
+
+### Deploy Profile
+`pnpm c:deploy_Profile --chain mumbai`
+
+### Deploy Management
+`pnpm c:deploy_Management --chain mumbai`
+
+### Deploy Splits Factory
+`pnpm c:deploy_SplitsFactory --chain mumbai`
+
+### Deploy CatalogFactory
+`pnpm c:deploy_CatalogFactory --chain mumbai`
+
+### Register Contracts with Registry
+`pnpm c:set_OfficialContracts --chain mumbai --sender <ADDRESS>`
+
+### Deploy ReleasesFactory
+`pnpm _deploy_ReleasesFactory --chain mumbai --sender <ADDRESS>`
+
+### Deploy OpenReleasesFactory
+`pnpm _deploy_OpenReleasesFactory --chain mumbai --sender <ADDRESS>`
+
+## Generate Smart Contract Documentation
+
+1. `pnpm c:docs`
+2. Visit [localhost:3000](localhost:3000)
 
 ## Smart Contract Testing
 
@@ -34,12 +93,6 @@ To generate a coverage report run
 ```bash
 pnpm coverage
 ```
-
-## Smart Contract Documentation
-
-1. `pnpm contracts:docs`
-2. Visit [localhost:3000](localhost:3000)
-
 
 ## License
 
