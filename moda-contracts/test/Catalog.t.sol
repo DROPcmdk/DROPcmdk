@@ -65,7 +65,6 @@ contract CatalogTest is Test {
 
         catalogBeacon = Upgrades.deployBeacon("Catalog.sol", admin);
         catalogFactory = new CatalogFactory(registry, catalogBeacon);
-        console2.log("factory", address(catalogFactory));
         registry.grantRole(keccak256("CATALOG_REGISTRAR_ROLE"), address(catalogFactory));
 
         vm.startPrank(catalogAdmin);

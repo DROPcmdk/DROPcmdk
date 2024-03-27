@@ -3,12 +3,13 @@ pragma solidity 0.8.21;
 
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ISplitsFactory} from "../ISplitsFactory.sol";
+import {IBurnable} from "./IBurnable.sol";
 
 /**
  * @notice IReleases defines the interface for a Releases contract - a contract for artists
  * and labels to create token drops for their tracks.
  */
-interface IReleases is IERC165 {
+interface IReleases is IERC165, IBurnable {
     event ReleaseCreated(uint256 tokenId);
     event ReleaseWithdrawn(address indexed receiver, uint256 tokenId, uint256 amount);
 

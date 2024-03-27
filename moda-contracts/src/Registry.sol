@@ -1,134 +1,404 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.21;
 
-import {IRegistry} from "./interfaces/Registry/IRegistry.sol";
-import {ICatalog} from "./interfaces/Catalog/ICatalog.sol";
-import {IOfficialContracts} from "./interfaces/Registry/IOfficialContracts.sol";
+import {IReleases} from "./interfaces/Releases/IReleases.sol";
+import {ITrackRegistration} from "./interfaces/Registry/ITrackRegistration.sol";
+import {IReleaseRegistration} from "./interfaces/Releases/IReleaseRegistration.sol";
+import {IOpenReleases} from "./interfaces/Releases/IOpenReleases.sol";
+import {IMembership} from "./interfaces/IMembership.sol";
 import {IManagement} from "./interfaces/IManagement.sol";
-import {ISplitsFactory} from "./interfaces/ISplitsFactory.sol";
-import "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
+import {AccessControlUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
-/**
- * @notice The Registry is a single top-level contract typically managed by a DAO.
- * Catalogs, managed by an organization, must register with the Registry to participate in the ecosystem.
- * The Registry also contains DAO treasury information to receive a portion of sales and royalties.
- */
-contract Registry is IRegistry, IOfficialContracts, AccessControlEnumerable {
-    using EnumerableSet for EnumerableSet.AddressSet;
+/// @notice A Catalog is a contract where artists and labels can register tracks.
+///         Membership to the Catalog is controlled by `IMembership`.
+contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgradeable {
+    /// @notice an address with AUTO_VERIFIED_ROLE will have their tracks verified on registration
+    bytes32 public constant AUTO_VERIFIED_ROLE = keccak256("AUTO_VERIFIED_ROLE");
 
-    /// @notice The max fee an admin can set. This is calculated as the numerator. e.g. 1_000 / 10_000 = 10%
-    uint32 constant MAX_TREASURY_FEE = 1_000;
-
-    /// @notice The denominator when determining the treasury fee. e.g. treasuryFee * someValue / FEE_SCALE
-    uint32 constant FEE_SCALE = 10_000;
-
-    // State Variables
-
-    /// @notice only an address with a verifier role can verify a track
-    bytes32 public constant VERIFIER_ROLE = keccak256("VERIFIER_ROLE");
-
-    /// @notice only an address with a catalog registrar role can register a catalog contract
-    bytes32 public constant CATALOG_REGISTRAR_ROLE = keccak256("CATALOG_REGISTRAR_ROLE");
-
-    /// @notice only an address with a releases registrar role can register a releases contract
-    bytes32 public constant RELEASES_REGISTRAR_ROLE = keccak256("RELEASES_REGISTRAR_ROLE");
-
-    address payable _treasury;
-    uint32 _treasuryFee;
-    ISplitsFactory _splitsFactory;
-    IManagement _management;
-
-    EnumerableSet.AddressSet _catalogs;
+    /// @custom:storage-location erc7201:moda.storage.Catalog
+    struct CatalogStorage {
+        IMembership _membership;
+        address _releases;
+        string _name;
+        uint256 _trackCount;
+        /// @dev trackRegistrationHash => trackId
+        mapping(string => string) _trackIds;
+        /// @dev trackId => RegisteredTrack
+        mapping(string => RegisteredTrack) _registeredTracks;
+        /// @dev trackId => releases => true/false
+        mapping(string => mapping(address => bool)) _singleTrackReleasesPermission;
+        /// @dev trackOwner => releases => true/false
+        mapping(address => mapping(address => bool)) _allTracksReleasesPermission;
+        /// @dev releasesOwner => releases
+        mapping(address => address) _registeredReleasesContracts;
+        /// @dev release => releaseOwner
+        mapping(address => address) _registeredReleasesOwners;
+        /// @dev releaseHash => RegisteredRelease
+        mapping(bytes32 => RegisteredRelease) _registeredReleases;
+        /// @dev releases => tokenId => tracks on release
+        mapping(address => mapping(uint256 => string[])) _releaseTracks;
+        /// @dev releases => tokenId => uri
+        mapping(address => mapping(uint256 => string)) _releaseUris;
+    }
 
     // Errors
 
+    error TrackIsNotRegistered();
+    error TrackAlreadyRegistered();
+    error TrackIsInvalid();
+    error ReleasesContractIsNotOfficial();
+    error ReleasesContractIsAlreadyRegistered();
+    error ReleasesContractDoesNotHavePermission();
+    error ReleaseAlreadyCreated();
+    error MembershipRequired();
+    error MustBeTrackOwner();
+    error VerifierRoleRequired();
+    error ReleasesRegistrarRoleRequired();
     error AddressCannotBeZero();
-    error CatalogAlreadyRegistered();
-    error CatalogIsNotRegistered();
-    error CatalogRegistrationFailed();
-    error CatalogUnregistrationFailed();
 
-    constructor(address payable treasury, uint32 treasuryFee) {
-        _treasury = treasury;
-        _treasuryFee = treasuryFee;
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-    }
+    // Storage location
 
-    /// @inheritdoc IRegistry
-    function registerCatalog(ICatalog catalog) external onlyRole(CATALOG_REGISTRAR_ROLE) {
-        if (address(catalog) == address(0)) revert AddressCannotBeZero();
-        if (_catalogs.contains(address(catalog))) revert CatalogAlreadyRegistered();
+    // keccak256(abi.encode(uint256(keccak256("moda.storage.Catalog")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant CatalogStorageLocation =
+        0x29716ba11260d206d72844135e3b7e5c7c3a8e39cde3c7b2b654f553db068900;
 
-        if (_catalogs.add(address(catalog))) {
-            emit CatalogRegistered(address(catalog), msg.sender);
-            return;
+    function _getCatalogStorage() private pure returns (CatalogStorage storage $) {
+        assembly {
+            $.slot := CatalogStorageLocation
         }
-
-        revert CatalogRegistrationFailed();
     }
 
-    /// @inheritdoc IRegistry
-    /// @notice Only a default admin can call this
-    function unregisterCatalog(address catalog) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (!_catalogs.contains(catalog)) revert CatalogIsNotRegistered();
+    /**
+     * @notice The initializer is disabled when deployed as an implementation contract
+     * @custom:oz-upgrades-unsafe-allow constructor
+     */
+    constructor() {
+        _disableInitializers();
+    }
 
-        if (_catalogs.remove(catalog)) {
-            emit CatalogUnregistered(catalog, msg.sender);
-            return;
+    // External Functions
+
+    /**
+     * @notice Initializes the contract
+     * @param owner The account that will gain ownership.
+     * @param name The name of the Catalog
+     * @param membership A custom contract to gate user access.
+     */
+    function initialize(
+        address owner,
+        string calldata name,
+        IMembership membership
+    ) external initializer {
+        CatalogStorage storage $ = _getCatalogStorage();
+        _grantRole(DEFAULT_ADMIN_ROLE, owner);
+        $._name = name;
+        $._membership = membership;
+    }
+
+    function setOfficialReleasesContract(address releases) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        if ($._releases != address(0)) {
+            revert AddressCannotBeZero();
         }
-
-        revert CatalogUnregistrationFailed();
+        $._releases = releases;
     }
 
-    /// @inheritdoc IRegistry
-    function isRegisteredCatalog(address catalog) external view returns (bool) {
-        return _catalogs.contains(catalog);
+    /// @inheritdoc ITrackRegistration
+    function registerTrack(address trackBeneficiary, string calldata trackRegistrationHash) external {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        _requireTrackIsNotRegistered(trackRegistrationHash);
+        _requireMembership(msg.sender);
+
+        string memory id = string(
+            abi.encodePacked(
+                $._name, "-", Strings.toString(block.chainid), "-", Strings.toString($._trackCount)
+            )
+        );
+        $._trackIds[trackRegistrationHash] = id;
+
+        bool hasAutoVerification = hasRole(AUTO_VERIFIED_ROLE, msg.sender);
+
+        TrackStatus status = hasAutoVerification ? TrackStatus.VALIDATED : TrackStatus.PENDING;
+
+        $._registeredTracks[id] = RegisteredTrack(
+            status, msg.sender, trackBeneficiary, trackRegistrationHash, "", "", address(0)
+        );
+        $._trackCount++;
+
+        emit TrackRegistered(trackRegistrationHash, id, msg.sender);
     }
 
-    /// @inheritdoc IRegistry
-    /// @notice The caller must be a default admin
-    function setTreasuryFee(uint32 newFee) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(newFee <= MAX_TREASURY_FEE, "Fee too high");
+    /// @inheritdoc ITrackRegistration
+    function getTrack(string calldata trackId) external view returns (RegisteredTrack memory) {
+        CatalogStorage storage $ = _getCatalogStorage();
 
-        uint32 oldFee = _treasuryFee;
-        _treasuryFee = newFee;
-
-        emit TreasuryFeeChanged(oldFee, newFee);
+        return $._registeredTracks[trackId];
     }
 
-    /// @inheritdoc IRegistry
-    /// @notice The caller must be a default admin
-    function setTreasury(address newTreasury) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (newTreasury == address(0)) revert AddressCannotBeZero();
-        address oldTreasury = _treasury;
-        _treasury = payable(newTreasury);
-        emit TreasuryChanged(oldTreasury, newTreasury);
+    /// @inheritdoc ITrackRegistration
+    function getTrackId(string calldata trackRegistrationHash) external view returns (string memory) {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        return $._trackIds[trackRegistrationHash];
     }
 
-    /// @inheritdoc IOfficialContracts
-    function getTreasuryInfo() external view returns (address, uint32, uint32) {
-        return (_treasury, _treasuryFee, FEE_SCALE);
+    /// @inheritdoc ITrackRegistration
+    function setTrackStatus(string calldata trackId, TrackStatus status) external {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        _requireVerifierRole(msg.sender);
+        _requireTrackIsRegistered(trackId);
+
+        RegisteredTrack storage track = $._registeredTracks[trackId];
+        track.trackStatus = status;
+        track.trackVerifier = msg.sender;
+
+        emit TrackUpdated(
+            status,
+            track.trackOwner,
+            track.trackBeneficiary,
+            track.trackRegistrationHash,
+            track.fingerprintHash,
+            track.validationHash,
+            msg.sender
+        );
     }
 
-    /// @inheritdoc IRegistry
-    /// @notice The caller must be a default admin
-    function setSplitsFactory(ISplitsFactory splitsFactory) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _splitsFactory = splitsFactory;
+    /// @inheritdoc ITrackRegistration
+    function setTrackBeneficiary(string calldata trackId, address newTrackBeneficiary) external {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        _requireTrackIsRegistered(trackId);
+        RegisteredTrack storage track = $._registeredTracks[trackId];
+        _requireTrackWritePermissions(trackId, msg.sender);
+        track.trackBeneficiary = newTrackBeneficiary;
+        emit TrackUpdated(
+            track.trackStatus,
+            track.trackOwner,
+            newTrackBeneficiary,
+            track.trackRegistrationHash,
+            track.fingerprintHash,
+            track.validationHash,
+            track.trackVerifier
+        );
     }
 
-    /// @inheritdoc IOfficialContracts
-    function getSplitsFactory() external view returns (ISplitsFactory) {
-        return _splitsFactory;
+    /// @inheritdoc ITrackRegistration
+    function setTrackMetadata(
+        string calldata trackId,
+        string calldata newTrackRegistrationHash
+    ) external {
+        _requireTrackIsRegistered(trackId);
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        RegisteredTrack storage track = $._registeredTracks[trackId];
+        _requireTrackWritePermissions(trackId, msg.sender);
+        track.trackRegistrationHash = newTrackRegistrationHash;
+
+        emit TrackUpdated(
+            track.trackStatus,
+            track.trackOwner,
+            track.trackBeneficiary,
+            newTrackRegistrationHash,
+            track.fingerprintHash,
+            track.validationHash,
+            track.trackVerifier
+        );
     }
 
-    /// @inheritdoc IRegistry
-    /// @notice The caller must be a default admin
-    function setManagement(IManagement management) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _management = management;
+    /// @inheritdoc ITrackRegistration
+    function setTrackFingerprintHash(
+        string calldata trackId,
+        string calldata fingerprintHash
+    ) external {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        _requireTrackIsRegistered(trackId);
+        RegisteredTrack storage track = $._registeredTracks[trackId];
+        _requireTrackWritePermissions(trackId, msg.sender);
+        track.fingerprintHash = fingerprintHash;
+        emit TrackUpdated(
+            track.trackStatus,
+            track.trackOwner,
+            track.trackBeneficiary,
+            track.trackRegistrationHash,
+            fingerprintHash,
+            track.validationHash,
+            track.trackVerifier
+        );
     }
 
-    /// @inheritdoc IOfficialContracts
-    function getManagement() external view returns (IManagement) {
-        return _management;
+    /// @inheritdoc ITrackRegistration
+    function setTrackValidationHash(string calldata trackId, string calldata validationHash) external {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        _requireTrackIsRegistered(trackId);
+        RegisteredTrack storage track = $._registeredTracks[trackId];
+        _requireTrackWritePermissions(trackId, msg.sender);
+        track.validationHash = validationHash;
+        emit TrackUpdated(
+            track.trackStatus,
+            track.trackOwner,
+            track.trackBeneficiary,
+            track.trackRegistrationHash,
+            track.fingerprintHash,
+            validationHash,
+            track.trackVerifier
+        );
+    }
+
+    /// @inheritdoc IReleaseRegistration
+    function registerRelease(
+        string[] calldata trackIds,
+        string calldata uri,
+        uint256 tokenId
+    ) external {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        _requireReleasesContractIsOfficial(msg.sender);
+        bool isOpen = IOpenReleases(msg.sender).supportsInterface(type(IOpenReleases).interfaceId);
+        for (uint256 i = 0; i < trackIds.length; i++) {
+            address trackOwner = $._registeredTracks[trackIds[i]].trackOwner;
+
+            bool hasFullPermission = $._allTracksReleasesPermission[trackOwner][msg.sender];
+            _requireTrackIsRegistered(trackIds[i]);
+            _requireTrackIsValid(trackIds[i]);
+
+            if (!hasFullPermission && !isOpen) {
+                _requireReleasesContractHasPermission(trackIds[i]);
+            }
+
+            $._releaseTracks[msg.sender][tokenId].push(trackIds[i]);
+        }
+        $._releaseUris[msg.sender][tokenId] = uri;
+        bytes32 releaseHash = _createReleaseHash(trackIds, uri);
+        _requireReleaseNotDuplicate(releaseHash);
+        $._registeredReleases[releaseHash] = RegisteredRelease(msg.sender, tokenId, trackIds);
+        emit ReleaseRegistered(trackIds, msg.sender, tokenId);
+    }
+
+    /// @inheritdoc IReleaseRegistration
+    function unregisterRelease(bytes32 releaseHash) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        delete $._registeredReleases[releaseHash];
+        emit ReleaseUnregistered(releaseHash);
+    }
+
+    /// @inheritdoc IReleaseRegistration
+    function getReleaseTracks(
+        address releases,
+        uint256 tokenId
+    ) external view returns (string[] memory) {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        return $._releaseTracks[releases][tokenId];
+    }
+
+    /// @inheritdoc IReleaseRegistration
+    function getReleaseHash(address releases, uint256 tokenId) external view returns (bytes32) {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        string[] memory trackIds = $._releaseTracks[releases][tokenId];
+        string memory uri = $._releaseUris[releases][tokenId];
+        bytes32 releaseHash = _createReleaseHash(trackIds, uri);
+        return releaseHash;
+    }
+
+    /// Public Functions
+
+    /// @inheritdoc IReleaseRegistration
+    function getRegisteredRelease(bytes32 releaseHash) public view returns (RegisteredRelease memory) {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        return $._registeredReleases[releaseHash];
+    }
+
+    /// Internal Functions
+
+    function _requireMembership(address caller) internal view {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        if (!$._membership.isMember(caller)) revert MembershipRequired();
+    }
+
+    function _requireVerifierRole(address account) internal view {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        if (!hasRole(keccak256("VERIFIER_ROLE"), account)) {
+            revert VerifierRoleRequired();
+        }
+    }
+
+    function _requireTrackIsRegistered(string calldata trackId) internal view {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        if (bytes($._registeredTracks[trackId].trackRegistrationHash).length == 0) {
+            revert TrackIsNotRegistered();
+        }
+    }
+
+    function _requireTrackIsNotRegistered(string calldata trackRegistrationHash) internal view {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        if (bytes($._trackIds[trackRegistrationHash]).length != 0) {
+            revert TrackAlreadyRegistered();
+        }
+    }
+
+    function _requireTrackIsValid(string calldata trackId) internal view {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        if ($._registeredTracks[trackId].trackStatus == TrackStatus.INVALIDATED) {
+            revert TrackIsInvalid();
+        }
+    }
+
+    function _requireTrackWritePermissions(string calldata trackId, address caller) internal view {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        if (caller != $._registeredTracks[trackId].trackOwner) revert MustBeTrackOwner();
+    }
+
+    function _requireReleasesContractHasPermission(string calldata trackId) internal view {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        if (!$._singleTrackReleasesPermission[trackId][msg.sender]) {
+            revert ReleasesContractDoesNotHavePermission();
+        }
+    }
+
+    function _requireReleaseNotDuplicate(bytes32 releaseHash) internal view {
+        if (getRegisteredRelease(releaseHash).releases != address(0)) {
+            revert ReleaseAlreadyCreated();
+        }
+    }
+
+    function _requireReleasesContractIsOfficial(address releases) internal view {
+        CatalogStorage storage $ = _getCatalogStorage();
+
+        if (releases != $._releases) {
+            revert ReleasesContractIsNotOfficial();
+        }
+    }
+
+    function _createReleaseHash(
+        string[] memory trackIds,
+        string memory uri
+    ) internal pure returns (bytes32) {
+        bytes memory packedHashes = _packStringArray(trackIds);
+        return keccak256(abi.encode(packedHashes, uri));
+    }
+
+    function _packStringArray(string[] memory array) internal pure returns (bytes memory) {
+        bytes memory packedBytes = "";
+        for (uint256 i = 0; i < array.length; i++) {
+            packedBytes = abi.encode(packedBytes, array[i]);
+        }
+        return packedBytes;
     }
 }

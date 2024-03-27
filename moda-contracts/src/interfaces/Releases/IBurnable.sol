@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.21;
 
-import {IReleases} from "./IReleases.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-
 /**
  * @notice IBurnable is an interface for burning a token.
  */

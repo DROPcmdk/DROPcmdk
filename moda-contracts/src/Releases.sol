@@ -8,30 +8,24 @@ import "@openzeppelin/contracts-upgradeable/token/ERC1155/utils/ERC1155HolderUpg
 
 import {IReleases} from "./interfaces/Releases/IReleases.sol";
 import {IReleasesInitialize} from "./interfaces/Releases/IReleasesInitialize.sol";
-import {IWithdrawRelease} from "./interfaces/Releases/IWithdrawRelease.sol";
-import {ICatalog} from "./interfaces/Catalog/ICatalog.sol";
 import {ISplitsFactory} from "./interfaces/ISplitsFactory.sol";
+import {IReleaseRegistration} from "./interfaces/Releases/IReleaseRegistration.sol";
 
 /**
- * @notice Releases is a contract to allow artists or labels to create track or multiple
- * track tokens called a "Release". `Releases` are registered with a Catalog, and can only create a
- * Release of tracks that have also been registered in the Catalog.
+ * @notice The contract allows any track owner to be able to create a release.
  */
 contract Releases is
-    IReleases,
-    IReleasesInitialize,
-    IWithdrawRelease,
+    IOpenReleases,
+    IOpenReleasesInitialize,
     ERC1155SupplyUpgradeable,
     ERC1155HolderUpgradeable,
     AccessControlUpgradeable,
     ERC2981Upgradeable
 {
     // State Variables
-
     uint256 constant MAX_ROYALTY_AMOUNT = 2_000;
 
-    ICatalog _catalog;
-
+    IRegistry _registry;
     ISplitsFactory _splitsFactory;
 
     string public name;
@@ -39,10 +33,8 @@ contract Releases is
 
     uint256 public numberOfReleases;
 
+    mapping(uint256 => address) _releaseOwners;
     mapping(uint256 => string) _uris;
-
-    /// @dev users with a Releases admin role can create releases with a curated contract
-    bytes32 public constant RELEASE_ADMIN_ROLE = keccak256("RELEASE_ADMIN_ROLE");
 
     // Errors
     error CannotBeZeroAddress();
@@ -50,33 +42,26 @@ contract Releases is
     error FieldCannotBeEmpty(string field);
     error CallerIsNotReleaseAdmin();
     error InvalidTokenId();
-    error CallerDoesNotHaveTrackAccess();
+    error CallerDoesNotHaveAccess();
 
-    /**
-     * @dev Constructor
-     * @notice The initializer is disabled when deployed as an implementation contract
-     */
+    /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
 
-    // External Functions
-
     /**
-     * @dev Initializes the contract
-     * @param admin - The address that will be given the role of default admin. See {AccessControl}
-     * @param releaseAdmins - An array of addresses that will be given the role of release admin
-     * @param name_ - The name of the Releases contract
-     * @param symbol_ - The symbol of the Releases contract
-     * @param catalog - A contract that implements ICatalog
-     * @param splitsFactory - A contract that implements ISplitsFactory
+     * @notice Initializer
+     * @param admin The address of the organization admin
+     * @param name_ The name of the token
+     * @param symbol_ The symbol of the token
+     * @param catalog A contract that implements ICatalog
+     * @param splitsFactory A contract that implements ISplitsFactory
      */
     function initialize(
         address admin,
-        address[] calldata releaseAdmins,
-        string calldata name_,
-        string calldata symbol_,
-        ICatalog catalog,
+        string memory name_,
+        string memory symbol_,
+        IRegistry registry,
         ISplitsFactory splitsFactory
     ) external initializer {
         __ERC1155_init("");
@@ -84,25 +69,24 @@ contract Releases is
         if (bytes(name_).length == 0) revert FieldCannotBeEmpty("name");
         if (bytes(symbol_).length == 0) revert FieldCannotBeEmpty("symbol");
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
-        for (uint8 i = 0; i < releaseAdmins.length; i++) {
-            _grantRole(RELEASE_ADMIN_ROLE, releaseAdmins[i]);
-        }
+
         name = name_;
         symbol = symbol_;
-        _catalog = catalog;
+        _registry = registry;
         _splitsFactory = splitsFactory;
     }
 
+    // External
+
     /**
      * @dev Creates a new release token and transfers to the receiver
-     * @notice Only release admins can call this function
-     * @param receiver - The address that will receive the release tokens
-     * @param royaltyAmount - The percentage of sale prices that should be
+     * @param receiver The address that will receive the release tokens
+     * @param royaltyAmount The percentage of sale prices that should be
      * paid to the beneficiary for re-sales. Calculated by <NOMINATOR> / 10,000.
      * e.g. For 10% royalties, pass in 1000
-     * @param uri_ - The URI of the token metadata
-     * @param totalSupply - The total amount of tokens to mint
-     * @param trackIds - An array containing the registered track ids of the tracks
+     * @param uri_ The URI of the token metadata
+     * @param totalSupply The total amount of tokens to mint
+     * @param trackIds An array containing the registered track ids of the tracks
      */
     function create(
         address receiver,
@@ -111,17 +95,18 @@ contract Releases is
         uint256 totalSupply,
         string[] calldata trackIds
     ) external {
-        if (!hasRole(RELEASE_ADMIN_ROLE, msg.sender)) revert CallerIsNotReleaseAdmin();
+        _requireCallerHasTrackAccess(trackIds);
         if (royaltyAmount > MAX_ROYALTY_AMOUNT) revert InvalidRoyaltyAmount();
 
         numberOfReleases++;
         _uris[numberOfReleases] = uri_;
+        _releaseOwners[numberOfReleases] = msg.sender;
 
-        ICatalog(_catalog).registerRelease(trackIds, uri_, numberOfReleases);
+        IReleaseRegistration(_registry).registerRelease(trackIds, uri_, numberOfReleases);
 
         address[] memory beneficiaries = new address[](trackIds.length);
         for (uint256 i = 0; i < trackIds.length; i++) {
-            beneficiaries[i] = ICatalog(_catalog).getTrack(trackIds[i]).trackBeneficiary;
+            beneficiaries[i] = ITrackRegistration(_registry).getTrack(trackIds[i]).trackBeneficiary;
         }
         address split = ISplitsFactory(_splitsFactory).create(beneficiaries);
 
@@ -132,31 +117,32 @@ contract Releases is
     }
 
     /**
-     * @inheritdoc IWithdrawRelease
-     * @notice Only release admins can call this function
-     * @notice This function bypasses the approval check, the
-     * contract does not need to set approval to the receiver.
+     * @dev see {IReleases-setUri}
      */
-    function withdrawRelease(
-        address receiver,
-        uint256 tokenId,
-        uint256 amount
-    ) external onlyRole(RELEASE_ADMIN_ROLE) {
+    function setUri(uint256 tokenId, string calldata uri_) external {
         _requireTokenIdExists(tokenId);
-        _safeTransferFrom(address(this), receiver, tokenId, amount, "");
-        emit ReleaseWithdrawn(msg.sender, tokenId, amount);
-    }
-
-    /**
-     * @inheritdoc IReleases
-     */
-    function setUri(uint256 tokenId, string calldata uri_) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        _requireTokenIdExists(tokenId);
+        _requireCallerIsReleaseOwner(tokenId);
         _uris[tokenId] = uri_;
         emit URI(uri_, tokenId);
     }
 
-    // Public Functions
+    /**
+     * @dev see {IBurnable-burn}
+     * @notice This function can be used to completely remove a release, the tokens
+     * will be burned and the URI will be removed, only the default admin of the contract
+     * can call this function
+     */
+    function burn(uint256 tokenId) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _requireTokenIdExists(tokenId);
+        address owner = _releaseOwners[tokenId];
+        uint256 totalSupply = totalSupply(tokenId);
+        _burn(owner, tokenId, totalSupply);
+        delete _uris[tokenId];
+        delete _releaseOwners[tokenId];
+        emit Burned(tokenId, owner);
+    }
+
+    // Public
 
     /**
      * @dev See {IERC1155-uri}.
@@ -182,7 +168,7 @@ contract Releases is
         )
         returns (bool)
     {
-        return interfaceId == type(IReleases).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(IOpenReleases).interfaceId || super.supportsInterface(interfaceId);
     }
 
     // Internal
@@ -193,5 +179,24 @@ contract Releases is
      */
     function _requireTokenIdExists(uint256 tokenId) internal view {
         if (tokenId > numberOfReleases) revert InvalidTokenId();
+    }
+
+    /**
+     * @dev Checks is the caller is registered as having track access, this could
+     * be the track owner or a manager
+     */
+    function _requireCallerHasTrackAccess(string[] memory trackIds) internal view {
+        for (uint256 i = 0; i < trackIds.length; i++) {
+            if (!ITrackRegistration(_registry).hasTrackAccess(trackIds[i], msg.sender)) {
+                revert CallerDoesNotHaveAccess();
+            }
+        }
+    }
+
+    /**
+     * @dev Checks the caller is the release owner or the release owner manager
+     */
+    function _requireCallerIsReleaseOwner(uint256 tokenId) internal view {
+        if (msg.sender != _releaseOwners[tokenId]) revert CallerDoesNotHaveAccess();
     }
 }
