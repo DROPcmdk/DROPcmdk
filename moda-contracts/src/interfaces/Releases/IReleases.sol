@@ -39,4 +39,6 @@ interface IReleases is IERC165, IBurnable {
      * @param uri_ The URI for the token
      */
     function setUri(uint256 tokenId, string calldata uri_) external;
+
+    function getNumberOfReleases() external view returns(uint256)
 }

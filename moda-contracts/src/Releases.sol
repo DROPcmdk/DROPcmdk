@@ -5,18 +5,15 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/token/common/ERC2981Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC1155/extensions/ERC1155SupplyUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC1155/utils/ERC1155HolderUpgradeable.sol";
-
 import {IReleases} from "./interfaces/Releases/IReleases.sol";
-import {IReleasesInitialize} from "./interfaces/Releases/IReleasesInitialize.sol";
 import {ISplitsFactory} from "./interfaces/ISplitsFactory.sol";
-import {IReleaseRegistration} from "./interfaces/Releases/IReleaseRegistration.sol";
+import {IRegistry} from "./interfaces/Registry/IRegistry.sol";
 
 /**
  * @notice The contract allows any track owner to be able to create a release.
  */
 contract Releases is
-    IOpenReleases,
-    IOpenReleasesInitialize,
+    IReleases,
     ERC1155SupplyUpgradeable,
     ERC1155HolderUpgradeable,
     AccessControlUpgradeable,
@@ -31,7 +28,7 @@ contract Releases is
     string public name;
     string public symbol;
 
-    uint256 public numberOfReleases;
+    uint256 _numberOfReleases;
 
     mapping(uint256 => address) _releaseOwners;
     mapping(uint256 => string) _uris;
@@ -42,7 +39,7 @@ contract Releases is
     error FieldCannotBeEmpty(string field);
     error CallerIsNotReleaseAdmin();
     error InvalidTokenId();
-    error CallerDoesNotHaveAccess();
+    error AccountDoesNotHaveTrackAccess();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -54,7 +51,7 @@ contract Releases is
      * @param admin The address of the organization admin
      * @param name_ The name of the token
      * @param symbol_ The symbol of the token
-     * @param catalog A contract that implements ICatalog
+     * @param registry A contract that implements IRegistry
      * @param splitsFactory A contract that implements ISplitsFactory
      */
     function initialize(
@@ -98,22 +95,30 @@ contract Releases is
         _requireCallerHasTrackAccess(trackIds);
         if (royaltyAmount > MAX_ROYALTY_AMOUNT) revert InvalidRoyaltyAmount();
 
-        numberOfReleases++;
-        _uris[numberOfReleases] = uri_;
-        _releaseOwners[numberOfReleases] = msg.sender;
+        _numberOfReleases++;
+        _uris[_numberOfReleases] = uri_;
+        _releaseOwners[_numberOfReleases] = msg.sender;
 
-        IReleaseRegistration(_registry).registerRelease(trackIds, uri_, numberOfReleases);
+        IRegistry(_registry).registerRelease(trackIds, uri_, _numberOfReleases);
 
         address[] memory beneficiaries = new address[](trackIds.length);
         for (uint256 i = 0; i < trackIds.length; i++) {
-            beneficiaries[i] = ITrackRegistration(_registry).getTrack(trackIds[i]).trackBeneficiary;
+            beneficiaries[i] = IRegistry(_registry).getTrack(trackIds[i]).trackBeneficiary;
         }
         address split = ISplitsFactory(_splitsFactory).create(beneficiaries);
 
-        _setTokenRoyalty(numberOfReleases, split, royaltyAmount);
-        _mint(receiver, numberOfReleases, totalSupply, "");
+        _setTokenRoyalty(_numberOfReleases, split, royaltyAmount);
+        _mint(receiver, _numberOfReleases, totalSupply, "");
 
-        emit ReleaseCreated(numberOfReleases);
+        emit ReleaseCreated(_numberOfReleases);
+    }
+
+    function getReleasesOwner(uint256 tokenId) external view returns (address) {
+        return _releaseOwners[tokenId];
+    }
+
+    function getNumberOfReleases() external view returns (uint256) {
+        return _numberOfReleases;
     }
 
     /**
@@ -168,7 +173,7 @@ contract Releases is
         )
         returns (bool)
     {
-        return interfaceId == type(IOpenReleases).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(IReleases).interfaceId || super.supportsInterface(interfaceId);
     }
 
     // Internal
@@ -178,7 +183,7 @@ contract Releases is
      * @param tokenId The ID of the token
      */
     function _requireTokenIdExists(uint256 tokenId) internal view {
-        if (tokenId > numberOfReleases) revert InvalidTokenId();
+        if (tokenId > _numberOfReleases) revert InvalidTokenId();
     }
 
     /**
@@ -187,8 +192,8 @@ contract Releases is
      */
     function _requireCallerHasTrackAccess(string[] memory trackIds) internal view {
         for (uint256 i = 0; i < trackIds.length; i++) {
-            if (!ITrackRegistration(_registry).hasTrackAccess(trackIds[i], msg.sender)) {
-                revert CallerDoesNotHaveAccess();
+            if (!IRegistry(_registry).hasTrackAccess(trackIds[i], msg.sender)) {
+                revert AccountDoesNotHaveTrackAccess();
             }
         }
     }
@@ -197,6 +202,6 @@ contract Releases is
      * @dev Checks the caller is the release owner or the release owner manager
      */
     function _requireCallerIsReleaseOwner(uint256 tokenId) internal view {
-        if (msg.sender != _releaseOwners[tokenId]) revert CallerDoesNotHaveAccess();
+        if (msg.sender != _releaseOwners[tokenId]) revert AccountDoesNotHaveTrackAccess();
     }
 }

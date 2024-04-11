@@ -2,18 +2,18 @@
 pragma solidity 0.8.21;
 
 import {IReleases} from "./interfaces/Releases/IReleases.sol";
-import {ITrackRegistration} from "./interfaces/Registry/ITrackRegistration.sol";
-import {IReleaseRegistration} from "./interfaces/Releases/IReleaseRegistration.sol";
-import {IOpenReleases} from "./interfaces/Releases/IOpenReleases.sol";
+import {IRegistry} from "./interfaces/Registry/IRegistry.sol";
 import {IMembership} from "./interfaces/IMembership.sol";
-import {IManagement} from "./interfaces/IManagement.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {AccessControlUpgradeable} from
     "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
 /// @notice A Catalog is a contract where artists and labels can register tracks.
 ///         Membership to the Catalog is controlled by `IMembership`.
-contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgradeable {
+contract Registry is IRegistry, AccessControlUpgradeable {
+    using EnumerableSet for EnumerableSet.AddressSet;
+
     /// @notice an address with AUTO_VERIFIED_ROLE will have their tracks verified on registration
     bytes32 public constant AUTO_VERIFIED_ROLE = keccak256("AUTO_VERIFIED_ROLE");
 
@@ -27,20 +27,18 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
         mapping(string => string) _trackIds;
         /// @dev trackId => RegisteredTrack
         mapping(string => RegisteredTrack) _registeredTracks;
-        /// @dev trackId => releases => true/false
-        mapping(string => mapping(address => bool)) _singleTrackReleasesPermission;
-        /// @dev trackOwner => releases => true/false
-        mapping(address => mapping(address => bool)) _allTracksReleasesPermission;
+        /// @dev trackId => trackAccess
+        mapping(string => EnumerableSet.AddressSet) _trackAccess;
         /// @dev releasesOwner => releases
         mapping(address => address) _registeredReleasesContracts;
         /// @dev release => releaseOwner
         mapping(address => address) _registeredReleasesOwners;
         /// @dev releaseHash => RegisteredRelease
         mapping(bytes32 => RegisteredRelease) _registeredReleases;
-        /// @dev releases => tokenId => tracks on release
-        mapping(address => mapping(uint256 => string[])) _releaseTracks;
-        /// @dev releases => tokenId => uri
-        mapping(address => mapping(uint256 => string)) _releaseUris;
+        /// @dev tokenId => tracks on release
+        mapping(uint256 => string[]) _releaseTracks;
+        /// @dev tokenId => uri
+        mapping(uint256 => string) _releaseUris;
     }
 
     // Errors
@@ -49,13 +47,11 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
     error TrackAlreadyRegistered();
     error TrackIsInvalid();
     error ReleasesContractIsNotOfficial();
-    error ReleasesContractIsAlreadyRegistered();
-    error ReleasesContractDoesNotHavePermission();
     error ReleaseAlreadyCreated();
     error MembershipRequired();
-    error MustBeTrackOwner();
+    error MustBeTrackAdmin();
+    error AccountDoesNotHaveTrackAccess();
     error VerifierRoleRequired();
-    error ReleasesRegistrarRoleRequired();
     error AddressCannotBeZero();
 
     // Storage location
@@ -106,7 +102,7 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
         $._releases = releases;
     }
 
-    /// @inheritdoc ITrackRegistration
+    /// @inheritdoc IRegistry
     function registerTrack(address trackBeneficiary, string calldata trackRegistrationHash) external {
         CatalogStorage storage $ = _getCatalogStorage();
 
@@ -124,6 +120,8 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
 
         TrackStatus status = hasAutoVerification ? TrackStatus.VALIDATED : TrackStatus.PENDING;
 
+        $._trackAccess[id].add(msg.sender);
+
         $._registeredTracks[id] = RegisteredTrack(
             status, msg.sender, trackBeneficiary, trackRegistrationHash, "", "", address(0)
         );
@@ -132,21 +130,21 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
         emit TrackRegistered(trackRegistrationHash, id, msg.sender);
     }
 
-    /// @inheritdoc ITrackRegistration
+    /// @inheritdoc IRegistry
     function getTrack(string calldata trackId) external view returns (RegisteredTrack memory) {
         CatalogStorage storage $ = _getCatalogStorage();
 
         return $._registeredTracks[trackId];
     }
 
-    /// @inheritdoc ITrackRegistration
+    /// @inheritdoc IRegistry
     function getTrackId(string calldata trackRegistrationHash) external view returns (string memory) {
         CatalogStorage storage $ = _getCatalogStorage();
 
         return $._trackIds[trackRegistrationHash];
     }
 
-    /// @inheritdoc ITrackRegistration
+    /// @inheritdoc IRegistry
     function setTrackStatus(string calldata trackId, TrackStatus status) external {
         CatalogStorage storage $ = _getCatalogStorage();
 
@@ -159,7 +157,7 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
 
         emit TrackUpdated(
             status,
-            track.trackOwner,
+            track.trackAdmin,
             track.trackBeneficiary,
             track.trackRegistrationHash,
             track.fingerprintHash,
@@ -168,17 +166,17 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
         );
     }
 
-    /// @inheritdoc ITrackRegistration
+    /// @inheritdoc IRegistry
     function setTrackBeneficiary(string calldata trackId, address newTrackBeneficiary) external {
         CatalogStorage storage $ = _getCatalogStorage();
 
         _requireTrackIsRegistered(trackId);
         RegisteredTrack storage track = $._registeredTracks[trackId];
-        _requireTrackWritePermissions(trackId, msg.sender);
+        _requireTrackAccess(trackId, msg.sender);
         track.trackBeneficiary = newTrackBeneficiary;
         emit TrackUpdated(
             track.trackStatus,
-            track.trackOwner,
+            track.trackAdmin,
             newTrackBeneficiary,
             track.trackRegistrationHash,
             track.fingerprintHash,
@@ -187,7 +185,7 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
         );
     }
 
-    /// @inheritdoc ITrackRegistration
+    /// @inheritdoc IRegistry
     function setTrackMetadata(
         string calldata trackId,
         string calldata newTrackRegistrationHash
@@ -196,12 +194,12 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
         CatalogStorage storage $ = _getCatalogStorage();
 
         RegisteredTrack storage track = $._registeredTracks[trackId];
-        _requireTrackWritePermissions(trackId, msg.sender);
+        _requireTrackAccess(trackId, msg.sender);
         track.trackRegistrationHash = newTrackRegistrationHash;
 
         emit TrackUpdated(
             track.trackStatus,
-            track.trackOwner,
+            track.trackAdmin,
             track.trackBeneficiary,
             newTrackRegistrationHash,
             track.fingerprintHash,
@@ -210,7 +208,7 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
         );
     }
 
-    /// @inheritdoc ITrackRegistration
+    /// @inheritdoc IRegistry
     function setTrackFingerprintHash(
         string calldata trackId,
         string calldata fingerprintHash
@@ -219,11 +217,11 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
 
         _requireTrackIsRegistered(trackId);
         RegisteredTrack storage track = $._registeredTracks[trackId];
-        _requireTrackWritePermissions(trackId, msg.sender);
+        _requireTrackAccess(trackId, msg.sender);
         track.fingerprintHash = fingerprintHash;
         emit TrackUpdated(
             track.trackStatus,
-            track.trackOwner,
+            track.trackAdmin,
             track.trackBeneficiary,
             track.trackRegistrationHash,
             fingerprintHash,
@@ -232,17 +230,17 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
         );
     }
 
-    /// @inheritdoc ITrackRegistration
+    /// @inheritdoc IRegistry
     function setTrackValidationHash(string calldata trackId, string calldata validationHash) external {
         CatalogStorage storage $ = _getCatalogStorage();
 
         _requireTrackIsRegistered(trackId);
         RegisteredTrack storage track = $._registeredTracks[trackId];
-        _requireTrackWritePermissions(trackId, msg.sender);
+        _requireTrackAccess(trackId, msg.sender);
         track.validationHash = validationHash;
         emit TrackUpdated(
             track.trackStatus,
-            track.trackOwner,
+            track.trackAdmin,
             track.trackBeneficiary,
             track.trackRegistrationHash,
             track.fingerprintHash,
@@ -251,7 +249,29 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
         );
     }
 
-    /// @inheritdoc IReleaseRegistration
+    function addTrackAccess(string calldata trackId, address accessAccount) external {
+        CatalogStorage storage $ = _getCatalogStorage();
+        if (msg.sender != $._registeredTracks[trackId].trackAdmin) {
+            revert MustBeTrackAdmin();
+        }
+        $._trackAccess[trackId].add(accessAccount);
+    }
+
+    function removeTrackAccess(string calldata trackId, address accessAccount) external {
+        CatalogStorage storage $ = _getCatalogStorage();
+        if (msg.sender != $._registeredTracks[trackId].trackAdmin) {
+            revert MustBeTrackAdmin();
+        }
+        $._trackAccess[trackId].remove(accessAccount);
+    }
+
+    /// @inheritdoc IRegistry
+    function hasTrackAccess(string calldata trackId, address caller) external view returns (bool) {
+        CatalogStorage storage $ = _getCatalogStorage();
+        return $._trackAccess[trackId].contains(caller);
+    }
+
+    /// @inheritdoc IRegistry
     function registerRelease(
         string[] calldata trackIds,
         string calldata uri,
@@ -260,28 +280,21 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
         CatalogStorage storage $ = _getCatalogStorage();
 
         _requireReleasesContractIsOfficial(msg.sender);
-        bool isOpen = IOpenReleases(msg.sender).supportsInterface(type(IOpenReleases).interfaceId);
-        for (uint256 i = 0; i < trackIds.length; i++) {
-            address trackOwner = $._registeredTracks[trackIds[i]].trackOwner;
 
-            bool hasFullPermission = $._allTracksReleasesPermission[trackOwner][msg.sender];
+        for (uint256 i = 0; i < trackIds.length; i++) {
             _requireTrackIsRegistered(trackIds[i]);
             _requireTrackIsValid(trackIds[i]);
 
-            if (!hasFullPermission && !isOpen) {
-                _requireReleasesContractHasPermission(trackIds[i]);
-            }
-
-            $._releaseTracks[msg.sender][tokenId].push(trackIds[i]);
+            $._releaseTracks[tokenId].push(trackIds[i]);
         }
-        $._releaseUris[msg.sender][tokenId] = uri;
+        $._releaseUris[tokenId] = uri;
         bytes32 releaseHash = _createReleaseHash(trackIds, uri);
         _requireReleaseNotDuplicate(releaseHash);
         $._registeredReleases[releaseHash] = RegisteredRelease(msg.sender, tokenId, trackIds);
         emit ReleaseRegistered(trackIds, msg.sender, tokenId);
     }
 
-    /// @inheritdoc IReleaseRegistration
+    /// @inheritdoc IRegistry
     function unregisterRelease(bytes32 releaseHash) external onlyRole(DEFAULT_ADMIN_ROLE) {
         CatalogStorage storage $ = _getCatalogStorage();
 
@@ -289,29 +302,26 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
         emit ReleaseUnregistered(releaseHash);
     }
 
-    /// @inheritdoc IReleaseRegistration
-    function getReleaseTracks(
-        address releases,
-        uint256 tokenId
-    ) external view returns (string[] memory) {
+    /// @inheritdoc IRegistry
+    function getReleaseTracks(uint256 tokenId) external view returns (string[] memory) {
         CatalogStorage storage $ = _getCatalogStorage();
 
-        return $._releaseTracks[releases][tokenId];
+        return $._releaseTracks[tokenId];
     }
 
-    /// @inheritdoc IReleaseRegistration
-    function getReleaseHash(address releases, uint256 tokenId) external view returns (bytes32) {
+    /// @inheritdoc IRegistry
+    function getReleaseHash(uint256 tokenId) external view returns (bytes32) {
         CatalogStorage storage $ = _getCatalogStorage();
 
-        string[] memory trackIds = $._releaseTracks[releases][tokenId];
-        string memory uri = $._releaseUris[releases][tokenId];
+        string[] memory trackIds = $._releaseTracks[tokenId];
+        string memory uri = $._releaseUris[tokenId];
         bytes32 releaseHash = _createReleaseHash(trackIds, uri);
         return releaseHash;
     }
 
     /// Public Functions
 
-    /// @inheritdoc IReleaseRegistration
+    /// @inheritdoc IRegistry
     function getRegisteredRelease(bytes32 releaseHash) public view returns (RegisteredRelease memory) {
         CatalogStorage storage $ = _getCatalogStorage();
 
@@ -327,8 +337,6 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
     }
 
     function _requireVerifierRole(address account) internal view {
-        CatalogStorage storage $ = _getCatalogStorage();
-
         if (!hasRole(keccak256("VERIFIER_ROLE"), account)) {
             revert VerifierRoleRequired();
         }
@@ -358,17 +366,11 @@ contract Registry is ITrackRegistration, IReleaseRegistration, AccessControlUpgr
         }
     }
 
-    function _requireTrackWritePermissions(string calldata trackId, address caller) internal view {
+    function _requireTrackAccess(string calldata trackId, address caller) internal view {
         CatalogStorage storage $ = _getCatalogStorage();
 
-        if (caller != $._registeredTracks[trackId].trackOwner) revert MustBeTrackOwner();
-    }
-
-    function _requireReleasesContractHasPermission(string calldata trackId) internal view {
-        CatalogStorage storage $ = _getCatalogStorage();
-
-        if (!$._singleTrackReleasesPermission[trackId][msg.sender]) {
-            revert ReleasesContractDoesNotHavePermission();
+        if (!$._trackAccess[trackId].contains(caller)) {
+            revert AccountDoesNotHaveTrackAccess();
         }
     }
 
