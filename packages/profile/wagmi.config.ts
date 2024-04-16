@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [
     actions(),
     foundry({
-      project: '../../moda-contracts',
+      project: '../../contracts',
       include: ['Profile.sol/**'],
     }),
     react(),

@@ -1,22 +1,21 @@
 {
   "name": "drop-sdk",
   "keywords": [
-    "MODA",
     "Music3",
     "Music",
     "Distribution",
     "Royalties",
     "NFTs",
-    "Polygon",
+    "Base",
     "Ethereum",
     "Web3"
   ],
   "version": "0.0.1",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
-  "description": "A JavaScript library for MODA protocol",
+  "description": "A JavaScript library for DROP protocol",
   "license": "Apache-2.0",
-  "repository": "github:modadao/moda-protocol",
+  "repository": "github:DROPcmdk/DROPcmdk",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "wagmi generate && tsup",

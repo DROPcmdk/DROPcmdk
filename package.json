@@ -2,12 +2,12 @@
   "name": "root",
   "private": true,
   "scripts": {
-    "build": "pnpm --filter moda-sdk build",
-    "dev": "pnpm --filter moda-sdk watch",
-    "c:install": "pnpm --filter moda-contracts install",
-    "1_deploy_Membership": "pnpm --filter moda-contracts 1_deploy_Membership",
-    "2_deploy_Catalog": "pnpm --filter moda-contracts 2_deploy_Catalog",
-    "c:docs": "pnpm --filter moda-contracts contracts:docs",
+    "build": "pnpm --filter drop-sdk build",
+    "dev": "pnpm --filter drop-sdk watch",
+    "c:install": "pnpm --filter contracts install",
+    "1_deploy_Membership": "pnpm --filter contracts 1_deploy_Membership",
+    "2_deploy_Catalog": "pnpm --filter contracts 2_deploy_Catalog",
+    "c:docs": "pnpm --filter contracts contracts:docs",
     "format": "biome format . --write",
     "lint": "biome check .",
     "lint:fix": "pnpm lint --apply-unsafe",
@@ -15,7 +15,7 @@
     "update": "pnpm update --latest --recursive --interactive",
     "generate:profile": "pnpm --filter profile run build",
     "generate:drop-sdk": "pnpm --filter drop-sdk run build",
-    "add_verified_roles": "pnpm --filter moda-contracts add_verified_roles",
+    "add_verified_roles": "pnpm --filter contracts add_verified_roles",
     "evm-profile:dev": "pnpm --filter evm-profile run dev"
   },
   "devDependencies": {
