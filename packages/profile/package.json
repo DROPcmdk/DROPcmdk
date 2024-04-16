@@ -7,7 +7,7 @@
     "Ethereum",
     "EVM",
     "Web3",
-    "MODA",
+    "DROP",
     "Verification",
     "Identity",
     "Blockchain"
@@ -17,7 +17,7 @@
   "module": "dist/index.mjs",
   "description": "A JavaScript library for EVM account Profile NFTs",
   "license": "Apache-2.0",
-  "repository": "github:modadao/moda-protocol",
+  "repository": "github:DROPcmdk/DROPcmdk",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "wagmi generate && tsup",

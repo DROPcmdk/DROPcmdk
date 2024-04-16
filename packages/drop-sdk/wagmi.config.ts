@@ -9,7 +9,7 @@ export default defineConfig({
       overridePackageName: '@wagmi/core',
     }),
     foundry({
-      project: '../../moda-contracts',
+      project: '../../contracts',
       include: [
         'Registry.sol/**',
         'CatalogFactory.sol/**',

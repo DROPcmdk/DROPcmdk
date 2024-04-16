@@ -6,6 +6,7 @@ blanco
 chainid
 codegen
 concat
+drop
 ethereum
 evenodd
 gasleft
@@ -19,8 +20,6 @@ kontract
 lcov
 merkle
 metamask
-moda
-modadao
 quickfix
 reentrancy
 remappings

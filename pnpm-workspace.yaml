@@ -1,4 +1,4 @@
 packages:
-  - "moda-contracts"
+  - "contracts"
   - "packages/*"
   - "apps/*"

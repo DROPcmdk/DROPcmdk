@@ -7,7 +7,7 @@ labels: feature
 
 ## Feature Request
 
-<!-- Please search MODA's issues in case one already exists for this idea. -->
+<!-- Please search DROPcmdk's issues in case one already exists for this idea. -->
 
 ### Suggestion
 

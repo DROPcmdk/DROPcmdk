@@ -7,7 +7,7 @@ labels: bug
 
 ## Bug Report
 
-<!-- Please search MODA's issues in case one already exists for this bug. -->
+<!-- Please search DROPcmdk's issues in case one already exists for this bug. -->
 
 ### Current Behavior
 

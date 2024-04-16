@@ -1,18 +1,4 @@
-<div align="center">
-  <img src="./logo.svg" alt="Logo" height="60" />
-  <br/>
-  <br/>
-  <a href="https://www.npmjs.com/package/modadao">
-    <img src="https://img.shields.io/npm/v/modadao?style=flat&label=Version" />
-  </a>
-  <br/>
-  <p>A web3 protocol for distributing music on EVM chains.</p>
 
-  [![k1]][k2]
-
-  [k1]: https://img.shields.io/twitter/follow/moda_dao?style=flat
-  [k2]: https://x.com/MODA_DAO
-</div>
 
 ## Getting Started
 
@@ -23,8 +9,8 @@ pnpm i
 
 2. Set up environment variables
 ```bash
-cp ./moda-contracts/.env-local ./moda-contracts/.env
-# Add your values to ./moda-contracts/.env
+cp ./contracts/.env-local ./contracts/.env
+# Add your values to ./contracts/.env
 ```
 
 ## Generate Smart Contract Documentation
@@ -32,51 +18,25 @@ cp ./moda-contracts/.env-local ./moda-contracts/.env
 1. `pnpm c:docs`
 2. Visit [localhost:8080](localhost:8080)
 
-### Deploy Membership
+### Membership 
 
-Membership is a way to control who has access to your Catalog. The default implementation defines any address as a "member", which means anyone can register tracks in the Catalog. You can extend this logic to define your own rules such as NFT-gates, minimal ERC-20 balance amounts, or a generic whitelist. See Membership.sol in `./moda-contracts/src/Membership.sol`
+Membership is a way to control who has access to your Registry. See Membership.sol in `./contracts/src/Membership.sol`
 
-1. Deploy contract `pnpm 1_deploy_Membership --chain mumbai`
+#### Deployment
 
-### Deploy Catalog
-
-2. Deploy contract `pnpm 2_deploy_Catalog --chain mumbai --sender <YOUR_OWNER_ADDRESS>`
-
-Then look in the console for your Catalog address:
-
-```
- $ Your Catalog was deployed to:
- $ <ADDRESS>
-```
-
-## (Optional, but not recommended) Deploy Common-Good Contracts
-
-These contracts have already been deployed on Mumbai. It is recommended that you use the ones already deployed so that the creators can benefit, but if you need to change certain features you are free to redeploy these. If you would like these contracts on a particular chain please reach out to the team and we will help facilitate. 
-
-### Deploy Registry
-`pnpm c:deploy_Registry --chain mumbai`
-
-### Deploy Profile
-`pnpm c:deploy_Profile --chain mumbai`
-
-### Deploy Management
-`pnpm c:deploy_Management --chain mumbai`
-
-### Deploy Splits Factory
-`pnpm c:deploy_SplitsFactory --chain mumbai`
-
-### Deploy CatalogFactory
-`pnpm c:deploy_CatalogFactory --chain mumbai`
-
-### Register Contracts with Registry
-`pnpm c:set_OfficialContracts --chain mumbai --sender <public address of who deployed the Registry>`
+`pnpm 1_deploy_Membership --chain mumbai`
 
 
-## Automatic track verification
+### Registry
 
-All registered tracks have a status that is used to represent their authenticity. Upon registration a track is given a status of PENDING, this status can be updated to VALIDATED or INVALIDATED by a privileged account. A track cannot be used to create a release without a status of VALIDATED. This step can by bypassed by a catalog owner granting the registering account with the AUTO_VERIFIED_ROLE. We have added a script that allows the catalog owner to do this from the command line. To grant the AUTO_VERIFIED_ROLE to one or more addresses you can run this command from the root: 
+#### Technical Overview
 
-`pnpm add_verified_roles <address1> <address2> ....`
+The Registry is an upgradeable contract and the only one in the protocol. It follows an Upgradeable Beacon pattern in which a Beacon contract containing the the implementation address is deployed and controlled by an Authorized account. Any proxy that is deployed will refer to this Beacon contract for the implementation address.
+
+The Registry uses a Namespaced Storage Layout defined in [ERC-7201](https://eips.ethereum.org/EIPS/eip-7201)
+
+The [Foundry Upgrades](https://docs.openzeppelin.com/upgrades-plugins/1.x/api-foundry-upgrades) library is used for ease of upgradeable contract deployment and customizable upgrade safety validations.
+
 
 ## Generate Smart Contract Documentation
 
@@ -88,7 +48,7 @@ All registered tracks have a status that is used to represent their authenticity
 
 ## Smart Contract Testing
 
-Navigate to the moda-contracts directory and run
+Navigate to the contracts directory and run
 
 ```bash
 pnpm test
@@ -102,7 +62,7 @@ pnpm coverage
 
 ## License
 
-`moda-protocol` is [Apache licensed](LICENSE).
+`drop-protocol` is [Apache licensed](LICENSE).
 
 ## Contributing
 
