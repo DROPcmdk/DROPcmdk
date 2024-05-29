@@ -388,8 +388,7 @@ contract Registry is IRegistry, AccessControlUpgradeable {
     function registerRelease(
         string calldata releaseMetadataHash,
         uint256[] memory trackIndexes,
-        address[] calldata controllers,
-        address[] calldata allowedTokenContracts
+        address[] calldata controllers
     ) external onlyMember {
         RegistryStorage storage $ = _getRegistryStorage();
 
@@ -419,9 +418,6 @@ contract Registry is IRegistry, AccessControlUpgradeable {
 
         for (uint256 i = 0; i < controllers.length; i++) {
             $._registeredReleases[$._releaseCount].controllers[controllers[i]] = true;
-        }
-        for (uint256 i = 0; i < allowedTokenContracts.length; i++) {
-            $._registeredReleases[$._releaseCount].allowedTokenContracts[allowedTokenContracts[i]] = true;
         }
 
         emit ReleaseRegistered(_createId("RELEASE", $._releaseCount), trackIndexes, msg.sender);
@@ -497,9 +493,7 @@ contract Registry is IRegistry, AccessControlUpgradeable {
     /// @inheritdoc IReleaseRegistration
     function addReleaseToken(uint256 releaseIndex, address tokenAddress, uint256 tokenId) external {
         RegistryStorage storage $ = _getRegistryStorage();
-        if (!$._registeredReleases[releaseIndex].allowedTokenContracts[tokenAddress]) {
-            revert InvalidTokenContract();
-        }
+
         if (!$._registeredReleases[releaseIndex].controllers[msg.sender]) {
             revert CallerDoesNotHavePermission();
         }
@@ -533,13 +527,7 @@ contract Registry is IRegistry, AccessControlUpgradeable {
         uint256 releaseIndex,
         uint256 trackIndex
     ) external view returns (bool hasAccess) {
-        RegistryStorage storage $ = _getRegistryStorage();
-
-        for (uint256 i = 0; i < $._registeredReleases[releaseIndex].releaseTracks.length; i++) {
-            if ($._registeredReleases[releaseIndex].releaseTracks[i].trackIndex == trackIndex) {
-                return $._registeredReleases[releaseIndex].releaseTracks[i].accessGranted;
-            }
-        }
+        return _checkTrackAccess(releaseIndex, trackIndex);
     }
 
     /// @inheritdoc IReleaseRegistration
@@ -565,33 +553,6 @@ contract Registry is IRegistry, AccessControlUpgradeable {
         RegistryStorage storage $ = _getRegistryStorage();
 
         return $._registeredReleases[releaseIndex].controllers[account];
-    }
-
-    /// @inheritdoc IReleaseRegistration
-    function setAllowedTokenContract(
-        uint256 releaseIndex,
-        address tokenContract,
-        bool isAllowed
-    ) external onlyMember {
-        RegistryStorage storage $ = _getRegistryStorage();
-
-        if (!$._registeredReleases[releaseIndex].controllers[msg.sender]) {
-            revert CallerDoesNotHavePermission();
-        }
-
-        $._registeredReleases[releaseIndex].allowedTokenContracts[tokenContract] = isAllowed;
-
-        emit AllowedTokenContractUpdated(_createId("RELEASE", releaseIndex), tokenContract, isAllowed);
-    }
-
-    /// @inheritdoc IReleaseRegistration
-    function isAllowedTokenContract(
-        address tokenContract,
-        uint256 releaseIndex
-    ) external view returns (bool) {
-        RegistryStorage storage $ = _getRegistryStorage();
-
-        return $._registeredReleases[releaseIndex].allowedTokenContracts[tokenContract];
     }
 
     /// @inheritdoc IReleaseRegistration
@@ -639,6 +600,19 @@ contract Registry is IRegistry, AccessControlUpgradeable {
 
         if ($._trackIndex[$._registeredTracks[trackIndex].trackMetadataHash] == 0) {
             revert TrackIsNotRegistered();
+        }
+    }
+
+    function _checkTrackAccess(
+        uint256 releaseIndex,
+        uint256 trackIndex
+    ) internal view returns (bool hasAccess) {
+        RegistryStorage storage $ = _getRegistryStorage();
+
+        for (uint256 i = 0; i < $._registeredReleases[releaseIndex].releaseTracks.length; i++) {
+            if ($._registeredReleases[releaseIndex].releaseTracks[i].trackIndex == trackIndex) {
+                return $._registeredReleases[releaseIndex].releaseTracks[i].accessGranted;
+            }
         }
     }
 

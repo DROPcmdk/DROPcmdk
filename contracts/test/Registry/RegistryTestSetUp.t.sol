@@ -39,7 +39,6 @@ contract RegistryTestSetUp is TestUtils {
     string releaseMetadataHash = "releaseHash";
     uint256[] public trackIndexes = [1];
     address[] releaseControllers = [artist, artistController];
-    address[] allowedTokenContracts = [address(releases)];
 
     function setUp() public {
         membership = new Membership();
@@ -95,8 +94,6 @@ contract RegistryTestSetUp is TestUtils {
 
     function registeringRelease_setUp() public {
         vm.startPrank(artist);
-        registry.registerRelease(
-            releaseMetadataHash, trackIndexes, releaseControllers, allowedTokenContracts
-        );
+        registry.registerRelease(releaseMetadataHash, trackIndexes, releaseControllers);
     }
 }

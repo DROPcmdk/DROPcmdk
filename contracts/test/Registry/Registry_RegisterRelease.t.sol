@@ -38,9 +38,7 @@ contract RegisterReleaseTest is RegistryTestSetUp {
         vm.expectRevert(Registry.TrackHasNotBeenVerified.selector);
 
         vm.startPrank(artist);
-        registry.registerRelease(
-            releaseMetadataHash, trackIndexes, releaseControllers, allowedTokenContracts
-        );
+        registry.registerRelease(releaseMetadataHash, trackIndexes, releaseControllers);
     }
 
     function test_registerRelease_RevertIf_track_not_registered() public {
@@ -50,9 +48,7 @@ contract RegisterReleaseTest is RegistryTestSetUp {
         vm.expectRevert(Registry.TrackIsNotRegistered.selector);
 
         vm.startPrank(artist);
-        registry.registerRelease(
-            releaseMetadataHash, unregisteredTrackIndexes, releaseControllers, allowedTokenContracts
-        );
+        registry.registerRelease(releaseMetadataHash, unregisteredTrackIndexes, releaseControllers);
     }
 
     function test_registerRelease_RevertIf_release_already_created() public {
@@ -63,9 +59,7 @@ contract RegisterReleaseTest is RegistryTestSetUp {
 
         vm.expectRevert(Registry.ReleaseAlreadyCreated.selector);
 
-        registry.registerRelease(
-            releaseMetadataHash, trackIndexes, releaseControllers, allowedTokenContracts
-        );
+        registry.registerRelease(releaseMetadataHash, trackIndexes, releaseControllers);
     }
 
     function test_registerRelease_emits_event() public {
@@ -77,9 +71,7 @@ contract RegisterReleaseTest is RegistryTestSetUp {
 
         vm.expectEmit(true, true, true, true);
         emit ReleaseRegistered("RELEASE-DROP-31337-1", trackIndexes, artist);
-        registry.registerRelease(
-            releaseMetadataHash, trackIndexes, releaseControllers, allowedTokenContracts
-        );
+        registry.registerRelease(releaseMetadataHash, trackIndexes, releaseControllers);
     }
 
     // unregisterRelease

@@ -35,8 +35,6 @@ interface IReleaseRegistration {
      * @param beneficiary The beneficiary of the release
      * @param releaseTracks The tracks in the release
      * @param controllers The authorized addresses that can update the release
-     * @param allowedTokenContracts The authorized  token contract addresses
-     * that can be used to create a release token
      * @param releaseTokens A list of release tokens created from the release
      */
     struct RegisteredRelease {
@@ -44,7 +42,6 @@ interface IReleaseRegistration {
         address beneficiary;
         ReleaseTrack[] releaseTracks;
         mapping(address => bool) controllers;
-        mapping(address => bool) allowedTokenContracts;
         ReleaseToken[] releaseTokens;
     }
     /**
@@ -78,13 +75,11 @@ interface IReleaseRegistration {
      * @param trackIndexes The indexes of the tracks in the release
      * @param controllers The authorized accounts that can update the release
      * and create release tokens
-     * @param allowedTokenContracts The contracts allowed to create release tokens
      */
     function registerRelease(
         string calldata releaseMetadataHash,
         uint256[] calldata trackIndexes,
-        address[] calldata controllers,
-        address[] calldata allowedTokenContracts
+        address[] calldata controllers
     ) external;
 
     /**
@@ -176,29 +171,6 @@ interface IReleaseRegistration {
      * @param releaseIndex The index of the release
      */
     function isReleaseController(address account, uint256 releaseIndex) external view returns (bool);
-
-    /**
-     * @notice Sets an allowed token contract
-     * The account setting the controller needs to be a controller for the corresponding release Id.
-     * @param releaseIndex The index of the release
-     * @param isAllowed The boolean value to set or unset the allowed contract
-     */
-    function setAllowedTokenContract(
-        uint256 releaseIndex,
-        address tokenContract,
-        bool isAllowed
-    ) external;
-
-    /**
-     * @notice Returns a boolean indicating if the token contract is allowed
-     * to be used to create a release token
-     * @param tokenContract The address of the token contract
-     * @param releaseIndex The index of the release
-     */
-    function isAllowedTokenContract(
-        address tokenContract,
-        uint256 releaseIndex
-    ) external view returns (bool);
 
     /**
      * @notice Returns the metadata hash for a token, called by a token contract to construct the URI

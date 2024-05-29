@@ -18,16 +18,48 @@ cp ./contracts/.env-local ./contracts/.env
 1. `pnpm c:docs`
 2. Visit [localhost:8080](localhost:8080)
 
+## Contracts
+
 ### Membership 
 
-Membership is a way to control who has access to your Registry. See Membership.sol in `./contracts/src/Membership.sol`
-
-#### Deployment
-
-`pnpm 1_deploy_Membership --chain mumbai`
-
+Membership is a way to control who has access to the Registry. 
 
 ### Registry
+
+#### General Overview
+
+The Registry allows onchain registration, verification and permissioning for Artists, their tracks and any releases that use those tracks.
+
+**Artist**
+
+- An artist is registered using the IPFS hash that points to their metadata.
+- When first registered an Artist has a status of Pending and must be verified before being able to have tracks registered to them.
+- Each registered artist is assigned a unique ID in the form `Artist-DROP-<chain id>-<artist count>`
+- At registration a list of controller accounts are assigned to the artist. These accounts can perform actions such as updating the Artist metadata, Registering a track to the artist and adding or removing other controllers accounts.
+
+**Track**
+
+- An track is registered to an Artist using the IPFS hash that points to their metadata.
+- When first registered a Track has a status of Pending and must be verified before being able to be added to a release.
+- A track can only be registered to a verified artist.
+- A user can register a track to an artist only if they are listed as a controller for that artist.
+- Each registered track is assigned a unique ID in the form `TRACK-DROP-<chain id>-<artist count>`
+- At registration a list of controller accounts or are assigned to the track. These accounts can perform actions such as updating the Track metadata, updating the Track beneficiary, adding or removing other controllers and minting releases containing the track.
+
+**Release**
+
+- A Release is registered using the IPFS hash that points to their metadata.
+- At registration a list of controller accounts are assigned to the Release. These accounts can perform actions such as updating the Release metadata, adding or removing other controllers and registering Release tokens to the Release.
+- In order for tracks to be included in a Release they must be registered and verified.
+- Each registered track is assigned a unique ID in the form `RELEASE-DROP-<chain id>-<artist count>`
+- In order for any Release tokens to be registered to the Release, all tracks on the release must have been granted access from a track controller
+
+**Release Token**
+
+- A Release token can be any token that has a Token Id and Metadata, it is up to a Release controller to verify that a token is legitimate and add it to a Release. 
+- A Release token can be on any EVM chain
+- A Release token is registered to a release using it's Contract address, Chain Id and Token Id 
+
 
 #### Technical Overview
 
@@ -36,6 +68,7 @@ The Registry is an upgradeable contract and the only one in the protocol. It fol
 The Registry uses a Namespaced Storage Layout defined in [ERC-7201](https://eips.ethereum.org/EIPS/eip-7201)
 
 The [Foundry Upgrades](https://docs.openzeppelin.com/upgrades-plugins/1.x/api-foundry-upgrades) library is used for ease of upgradeable contract deployment and customizable upgrade safety validations.
+
 
 
 ## Generate Smart Contract Documentation
