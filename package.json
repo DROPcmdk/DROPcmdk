@@ -5,8 +5,12 @@
     "build": "pnpm --filter drop-sdk build",
     "dev": "pnpm --filter drop-sdk watch",
     "c:install": "pnpm --filter contracts install",
+    "_deploy_Profile": "pnpm --filter contracts _deploy_Profile",
     "1_deploy_Membership": "pnpm --filter contracts 1_deploy_Membership",
-    "2_deploy_Catalog": "pnpm --filter contracts 2_deploy_Catalog",
+    "2_deploy_SplitsFactory": "pnpm --filter contracts 2_deploy_SplitsFactory",
+    "3_deploy_Registry": "pnpm --filter contracts 3_deploy_Registry",
+    "4_deploy_ReleasesFactory": "pnpm --filter contracts 4_deploy_ReleasesFactory",
+    "5_deploy_Marketplace": "pnpm --filter contracts 5_deploy_Marketplace",
     "c:docs": "pnpm --filter contracts contracts:docs",
     "format": "biome format . --write",
     "lint": "biome check .",
@@ -15,8 +19,7 @@
     "update": "pnpm update --latest --recursive --interactive",
     "generate:profile": "pnpm --filter profile run build",
     "generate:drop-sdk": "pnpm --filter drop-sdk run build",
-    "add_verified_roles": "pnpm --filter contracts add_verified_roles",
-    "evm-profile:dev": "pnpm --filter evm-profile run dev"
+    "add_verified_roles": "pnpm --filter contracts add_verified_roles"
   },
   "devDependencies": {
     "@biomejs/biome": "1.3.3"
