@@ -7,6 +7,7 @@ chainid
 codegen
 concat
 drop
+DROPcmdk
 ethereum
 evenodd
 gasleft
